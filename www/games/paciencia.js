@@ -1,271 +1,230 @@
 // ══════════════════════════════════════
-// PACIÊNCIA (Klondike Solitaire)
+// PACIÊNCIA SPIDER (2 naipes — Médio)
 // ══════════════════════════════════════
-const SUITS = ['♠','♥','♦','♣'];
-const SUIT_NAMES = ['spades','hearts','diamonds','clubs'];
-const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+const SP_SUITS  = ['♠','♥'];
+const SP_RANKS  = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
 
-let solStock = [], solWaste = [], solFoundations = [[],[],[],[]], solTableau = [[],[],[],[],[],[],[]];
-let solSelectedFrom = null; // {area, col, idx}
-let solScore = 0, solMoves = 0;
+let spTableau = []; // 10 colunas
+let spStock   = []; // pilhas de 10 para comprar
+let spCompleted = 0; // sequências completas removidas
+let spMoves   = 0;
+let spSelected = null; // {col, idx}
+let spGameOver = false;
 
-function makeDeck() {
+function makeSpiderDeck() {
+  // 2 naipes × 4 cópias × 13 = 104 cartas
   const deck = [];
-  for (let s=0;s<4;s++) for (let r=0;r<13;r++) {
-    deck.push({suit:s, rank:r, faceUp:false});
+  for (let copy = 0; copy < 4; copy++) {
+    for (const suit of SP_SUITS) {
+      for (let r = 0; r < 13; r++) {
+        deck.push({suit, rank: SP_RANKS[r], rankIdx: r, faceUp: false, id: `${suit}${r}c${copy}`});
+      }
+    }
   }
   return shuffle(deck);
 }
 
-function cardColor(suit) { return suit===1||suit===2?'red':'black'; }
-function cardLabel(card) { return RANKS[card.rank]+SUITS[card.suit]; }
-
 function initSolitaire() {
   stopAllTimers();
-  solScore=0; solMoves=0;
-  document.getElementById('sol-score').textContent='0';
-  document.getElementById('sol-moves').textContent='0';
-  document.getElementById('sol-time').textContent='00:00';
-  solSelectedFrom=null;
-  solFoundations=[[],[],[],[]];
-  solTableau=[[],[],[],[],[],[],[]];
+  spCompleted = 0; spMoves = 0; spSelected = null; spGameOver = false;
+  document.getElementById('sol-score').textContent  = '0';
+  document.getElementById('sol-moves').textContent  = '0';
+  document.getElementById('sol-time').textContent   = '00:00';
 
-  const deck=makeDeck();
-  let di=0;
-  for (let col=0;col<7;col++) {
-    for (let row=0;row<=col;row++) {
-      const card={...deck[di++]};
-      card.faceUp=row===col;
-      solTableau[col].push(card);
+  const deck = makeSpiderDeck();
+  spTableau = Array.from({length:10}, () => []);
+  // Deal: cols 0-3 get 6 cards, cols 4-9 get 5 cards
+  for (let col = 0; col < 10; col++) {
+    const count = col < 4 ? 6 : 5;
+    for (let i = 0; i < count; i++) {
+      const card = deck.pop();
+      card.faceUp = i === count - 1;
+      spTableau[col].push(card);
     }
   }
-  solStock=deck.slice(di).map(c=>({...c,faceUp:false}));
-  solWaste=[];
+  // Remaining 50 cards split into 5 groups of 10
+  spStock = [];
+  for (let i = 0; i < 5; i++) {
+    spStock.push(deck.splice(0, 10));
+  }
 
-  renderSolitaire();
+  renderSpider();
   startTimer('sol','sol-time');
 }
 
-function renderSolitaire() {
-  // Foundations
-  for (let i=0;i<4;i++) {
-    const el=document.getElementById(`sol-f${i}`);
-    el.innerHTML='';
-    if (solFoundations[i].length) {
-      const card=solFoundations[i][solFoundations[i].length-1];
-      el.appendChild(makeCardEl(card,{area:'foundation',col:i}));
-    } else {
-      el.textContent=SUITS[i];
+function spGetMovableStack(col, idx) {
+  // Stack from idx to end must be same suit, descending rank
+  const stack = spTableau[col].slice(idx);
+  if (!stack.every(c => c.faceUp)) return null;
+  for (let i = 1; i < stack.length; i++) {
+    if (stack[i].suit !== stack[0].suit) return null;
+    if (stack[i].rankIdx !== stack[i-1].rankIdx - 1) return null;
+  }
+  return stack;
+}
+
+function spCanPlace(card, targetCol) {
+  const col = spTableau[targetCol];
+  if (col.length === 0) return true;
+  const top = col[col.length - 1];
+  if (!top.faceUp) return false;
+  return card.rankIdx === top.rankIdx - 1;
+}
+
+function spClick(col, idx) {
+  if (spGameOver) return;
+  const card = spTableau[col][idx];
+  if (!card.faceUp) return;
+
+  if (!spSelected) {
+    const stack = spGetMovableStack(col, idx);
+    if (stack) { spSelected = {col, idx}; renderSpider(); }
+    return;
+  }
+
+  // Clicking same column — deselect
+  if (spSelected.col === col) { spSelected = null; renderSpider(); return; }
+
+  // Try to move
+  const stack = spGetMovableStack(spSelected.col, spSelected.idx);
+  if (stack && spCanPlace(stack[0], col)) {
+    // Move stack
+    const moved = spTableau[spSelected.col].splice(spSelected.idx);
+    spTableau[col].push(...moved);
+    // Flip top of source
+    const src = spTableau[spSelected.col];
+    if (src.length && !src[src.length-1].faceUp) src[src.length-1].faceUp = true;
+    spMoves++;
+    document.getElementById('sol-moves').textContent = spMoves;
+    spSelected = null;
+    checkSpiderComplete();
+    renderSpider();
+  } else {
+    // Try selecting new stack
+    const newStack = spGetMovableStack(col, idx);
+    spSelected = newStack ? {col, idx} : null;
+    renderSpider();
+  }
+}
+
+function checkSpiderComplete() {
+  for (let col = 0; col < 10; col++) {
+    const pile = spTableau[col];
+    if (pile.length < 13) continue;
+    // Check if top 13 form a complete K→A sequence same suit
+    const start = pile.length - 13;
+    const seq = pile.slice(start);
+    if (seq[0].rankIdx === 12 && seq.every((c,i) => c.faceUp && c.suit === seq[0].suit && c.rankIdx === 12-i)) {
+      spTableau[col].splice(start, 13);
+      spCompleted++;
+      document.getElementById('sol-score').textContent = spCompleted * 100;
+      if (spCompleted === 8) {
+        stopAllTimers();
+        showMsg('🎉','Você ganhou!','Parabéns! Completou o Spider Paciência!',initSolitaire);
+      }
     }
   }
-  // Stock
-  const stock=document.getElementById('sol-stock');
-  stock.innerHTML='';
-  if (solStock.length) {
-    const back=document.createElement('div');
-    back.className='sol-card face-down';
-    stock.appendChild(back);
+}
+
+function spDeal() {
+  if (!spStock.length) return;
+  // Each column must have at least 1 card
+  const batch = spStock.pop();
+  for (let col = 0; col < 10; col++) {
+    const card = batch[col];
+    card.faceUp = true;
+    spTableau[col].push(card);
+  }
+  spMoves++;
+  document.getElementById('sol-moves').textContent = spMoves;
+  spSelected = null;
+  checkSpiderComplete();
+  renderSpider();
+}
+
+function renderSpider() {
+  // Update stock button
+  const stockEl = document.getElementById('sol-stock');
+  stockEl.innerHTML = '';
+  if (spStock.length > 0) {
+    const back = document.createElement('div');
+    back.className = 'sol-card face-down';
+    back.style.cursor = 'pointer';
+    back.onclick = spDeal;
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'position:absolute;bottom:2px;right:4px;font-size:10px;color:rgba(255,255,255,.7)';
+    lbl.textContent = `×${spStock.length}`;
+    back.appendChild(lbl);
+    stockEl.appendChild(back);
   } else {
-    stock.innerHTML='🔄<br><small>Reset</small>';
+    stockEl.innerHTML = '<div style="font-size:11px;color:#aaa;text-align:center">Sem<br>cartas</div>';
   }
-  // Waste
-  const waste=document.getElementById('sol-waste');
-  waste.innerHTML='';
-  if (solWaste.length) {
-    const card=solWaste[solWaste.length-1];
-    waste.appendChild(makeCardEl(card,{area:'waste',col:0,idx:solWaste.length-1}));
-  }
-  // Tableau
-  const tab=document.getElementById('sol-tableau');
-  tab.innerHTML='';
-  for (let col=0;col<7;col++) {
-    const colEl=document.createElement('div');
-    colEl.className='sol-col';
-    colEl.dataset.col=col;
-    colEl.style.minHeight='80px';
-    if (!solTableau[col].length) {
-      const slot=document.createElement('div');
-      slot.className='sol-card-slot';
-      slot.textContent='K';
-      slot.addEventListener('click',()=>solClickCol(col,-1));
+
+  // Hide waste & foundations (not used in Spider)
+  const waste = document.getElementById('sol-waste');
+  if (waste) waste.innerHTML = `<div style="font-size:12px;color:var(--green);text-align:center;line-height:1.3">✅ ${spCompleted}<br><small>séries</small></div>`;
+  const founds = document.getElementById('sol-foundations');
+  if (founds) founds.style.display = 'none';
+
+  // Render tableau
+  const tab = document.getElementById('sol-tableau');
+  tab.innerHTML = '';
+  for (let col = 0; col < 10; col++) {
+    const colEl = document.createElement('div');
+    colEl.className = 'sol-col';
+    colEl.style.minHeight = '80px';
+    if (!spTableau[col].length) {
+      const slot = document.createElement('div');
+      slot.className = 'sol-card-slot';
+      slot.style.cursor = 'pointer';
+      slot.onclick = () => { if (spSelected) spClick(col, -1); };
       colEl.appendChild(slot);
     }
-    solTableau[col].forEach((card,idx)=>{
-      const el=makeCardEl(card,{area:'tableau',col,idx});
-      el.style.marginTop=idx>0?'-60px':'0';
+    spTableau[col].forEach((card, idx) => {
+      const el = makeSpiderCardEl(card, col, idx);
+      el.style.marginTop = idx > 0 ? '-58px' : '0';
       colEl.appendChild(el);
     });
     tab.appendChild(colEl);
   }
-  checkSolWin();
 }
 
-function makeCardEl(card, loc) {
-  const el=document.createElement('div');
-  if (!card.faceUp) { el.className='sol-card face-down'; return el; }
-  el.className=`sol-card ${cardColor(card.suit)}`;
-  // Is selected?
-  if (solSelectedFrom && solSelectedFrom.area===loc.area && solSelectedFrom.col===loc.col) {
-    if (loc.area==='waste' || (loc.area==='tableau' && solSelectedFrom.idx===loc.idx)) {
-      el.classList.add('selected-card');
-    }
+function makeSpiderCardEl(card, col, idx) {
+  const el = document.createElement('div');
+  if (!card.faceUp) {
+    el.className = 'sol-card face-down';
+    return el;
   }
-  el.innerHTML=`<span>${RANKS[card.rank]}</span><span class="suit">${SUITS[card.suit]}</span>`;
-  el.addEventListener('click',()=>solClick(loc));
+  const isRed = card.suit === '♥';
+  const isSelected = spSelected && spSelected.col === col && idx >= spSelected.idx;
+  el.className = `sol-card ${isRed?'red':'black'}${isSelected?' selected-card':''}`;
+  el.innerHTML = `<span>${card.rank}</span><span class="suit">${card.suit}</span>`;
+  el.addEventListener('click', () => spClick(col, idx));
   return el;
 }
 
-function solClick(loc) {
-  const {area,col,idx}=loc;
-  // If nothing selected — select
-  if (!solSelectedFrom) {
-    if (area==='waste') solSelectedFrom=loc;
-    else if (area==='foundation') {} // can't pick from foundation in simple mode
-    else if (area==='tableau') {
-      const card=solTableau[col][idx];
-      if (card && card.faceUp) solSelectedFrom=loc;
-    }
-    renderSolitaire();
-    return;
-  }
-  // Already selected — try to move
-  solTryMove(loc);
-}
-
-function solClickCol(col, idx) {
-  if (!solSelectedFrom) return;
-  solTryMove({area:'tableau',col,idx:-1});
-}
-
-function solTryMove(dest) {
-  const src=solSelectedFrom;
-  let card=null;
-  let stackSize=1;
-
-  if (src.area==='waste') card=solWaste[solWaste.length-1];
-  else if (src.area==='tableau') {
-    card=solTableau[src.col][src.idx];
-    stackSize=solTableau[src.col].length-src.idx;
-  }
-
-  if (!card) { solSelectedFrom=null; renderSolitaire(); return; }
-
-  let moved=false;
-
-  if (dest.area==='foundation') {
-    const f=solFoundations[dest.col];
-    const topF=f.length?f[f.length-1]:null;
-    if (stackSize===1 && canPlaceFoundation(card,topF,dest.col)) {
-      f.push({...card});
-      removeFromSource(src);
-      moved=true;
-      solScore+=10;
-    }
-  } else if (dest.area==='tableau') {
-    const col=dest.col;
-    const top=solTableau[col].length?solTableau[col][solTableau[col].length-1]:null;
-    if (canPlaceTableau(card,top)) {
-      const stack=src.area==='tableau'?solTableau[src.col].splice(src.idx):null;
-      if (src.area==='waste') solTableau[col].push({...card,faceUp:true});
-      else if (stack) solTableau[col].push(...stack.map(c=>({...c,faceUp:true})));
-      if (src.area==='waste') solWaste.pop();
-      // Flip next card in source col
-      if (src.area==='tableau' && solTableau[src.col].length) {
-        solTableau[src.col][solTableau[src.col].length-1].faceUp=true;
-        solScore+=5;
-      }
-      moved=true;
-      solScore+=5;
-    }
-  }
-
-  if (moved) {
-    solMoves++;
-    document.getElementById('sol-score').textContent=solScore;
-    document.getElementById('sol-moves').textContent=solMoves;
-  }
-  solSelectedFrom=null;
-  renderSolitaire();
-}
-
-function removeFromSource(src) {
-  if (src.area==='waste') solWaste.pop();
-  else if (src.area==='tableau') {
-    solTableau[src.col].splice(src.idx);
-    if (solTableau[src.col].length) solTableau[src.col][solTableau[src.col].length-1].faceUp=true;
-  }
-}
-
-function canPlaceFoundation(card, top, fi) {
-  if (!top) return card.rank===0; // Ace
-  return card.suit===top.suit && card.rank===top.rank+1;
-}
-
-function canPlaceTableau(card, top) {
-  if (!top) return card.rank===12; // King
-  return cardColor(card.suit)!==cardColor(top.suit) && card.rank===top.rank-1;
-}
-
-function solDrawCard() {
-  if (solStock.length) {
-    const card=solStock.pop();
-    card.faceUp=true;
-    solWaste.push(card);
-  } else {
-    // Reset
-    solStock=[...solWaste.reverse().map(c=>({...c,faceUp:false}))];
-    solWaste=[];
-  }
-  solSelectedFrom=null;
-  renderSolitaire();
-}
-
-function checkSolWin() {
-  if (solFoundations.every(f=>f.length===13)) {
-    stopAllTimers();
-    showMsg('🎉','Você ganhou!',`Parabéns! Paciência completa com ${solScore} pontos!`,initSolitaire);
-  }
-}
-
+// Auto-complete: find any valid move
 function solAutoComplete() {
-  // Try to move cards to foundation automatically
-  let moved=true;
-  while(moved) {
-    moved=false;
-    // from waste
-    if (solWaste.length) {
-      const card=solWaste[solWaste.length-1];
-      for (let fi=0;fi<4;fi++) {
-        const f=solFoundations[fi];
-        if (canPlaceFoundation(card,f.length?f[f.length-1]:null,fi)) {
-          f.push(solWaste.pop()); moved=true; break;
-        }
-      }
-    }
-    // from tableau
-    for (let col=0;col<7;col++) {
-      if (!solTableau[col].length) continue;
-      const card=solTableau[col][solTableau[col].length-1];
-      if (!card.faceUp) continue;
-      for (let fi=0;fi<4;fi++) {
-        const f=solFoundations[fi];
-        if (canPlaceFoundation(card,f.length?f[f.length-1]:null,fi)) {
-          f.push(solTableau[col].pop());
-          if (solTableau[col].length) solTableau[col][solTableau[col].length-1].faceUp=true;
-          moved=true; break;
+  // Find easiest move
+  for (let srcCol = 0; srcCol < 10; srcCol++) {
+    for (let idx = 0; idx < spTableau[srcCol].length; idx++) {
+      const stack = spGetMovableStack(srcCol, idx);
+      if (!stack) continue;
+      for (let dstCol = 0; dstCol < 10; dstCol++) {
+        if (dstCol === srcCol) continue;
+        if (spCanPlace(stack[0], dstCol)) {
+          const moved = spTableau[srcCol].splice(idx);
+          spTableau[dstCol].push(...moved);
+          const src = spTableau[srcCol];
+          if (src.length && !src[src.length-1].faceUp) src[src.length-1].faceUp = true;
+          spMoves++;
+          document.getElementById('sol-moves').textContent = spMoves;
+          checkSpiderComplete();
+          renderSpider();
+          return;
         }
       }
     }
   }
-  renderSolitaire();
+  showMsg('💭','Sem movimento automático','Não encontrei um movimento óbvio. Tente reorganizar as colunas!',null);
 }
-
-// Foundation click handlers
-document.addEventListener('DOMContentLoaded',()=>{
-  for (let i=0;i<4;i++) {
-    const el=document.getElementById(`sol-f${i}`);
-    if (el) el.addEventListener('click',()=>{
-      if (solSelectedFrom) solTryMove({area:'foundation',col:i});
-    });
-  }
-});
