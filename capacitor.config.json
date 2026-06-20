@@ -1,0 +1,23 @@
+{
+  "appId": "br.jogos.vovo",
+  "appName": "Jogos da Vovó",
+  "webDir": ".",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#FDF6EC"
+  },
+  "plugins": {
+    "SplashScreen": {
+      "launchShowDuration": 1500,
+      "backgroundColor": "#C97B84",
+      "showSpinner": false
+    },
+    "StatusBar": {
+      "style": "Light",
+      "backgroundColor": "#C97B84"
+    }
+  }
+}
