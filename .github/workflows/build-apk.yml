@@ -1,0 +1,43 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    - uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+    - uses: android-actions/setup-android@v3
+    - run: npm install
+    - run: npx cap add android
+    - run: npx cap sync android
+    - run: chmod +x android/gradlew
+    - run: cd android && ./gradlew assembleDebug
+    - uses: actions/upload-artifact@v4
+      with:
+        name: jogos-da-vovo.apk
+        path: android/app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
+    - uses: softprops/action-gh-release@v2
+      with:
+        tag_name: v1.0.${{ github.run_number }}
+        name: "Jogos da Vovó v1.0.${{ github.run_number }}"
+        body: |
+          ## 🌸 Jogos da Vovó
+          Baixe o APK abaixo e instale no Android!
+          ### Como instalar:
+          1. Baixe o arquivo .apk
+          2. Configurações → Segurança → Fontes desconhecidas → Ativar
+          3. Abra o .apk e instale
+        files: android/app/build/outputs/apk/debug/app-debug.apk
+        token: ${{ secrets.GITHUB_TOKEN }}
