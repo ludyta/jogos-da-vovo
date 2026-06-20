@@ -1,7 +1,6 @@
 // ══════════════════════════════════════
-// MAHJONG SOLITÁRIO — Layout Pirâmide/Losango
-// Sem scroll, tudo visível, pares sempre possíveis
-// Seleção por toque individual
+// MAHJONG SOLITÁRIO — Layout Pirâmide fixo
+// Sem scroll, peças sempre visíveis
 // ══════════════════════════════════════
 
 const MJ_LABELS = {
@@ -18,93 +17,30 @@ const MJ_COLORS = {
   W:'#5a4a0a',D:'#6b1a5a',S:'#0a5a4a',F:'#4a0a5a'
 };
 
-// Classic pyramid layout — 36 pairs = 72 tiles
-// Layout rows (each entry = [layer, row, col] in a grid where each unit = half tile)
-function buildPyramidLayout() {
-  // We'll use a classic turtle layout scaled to fit screen
-  // Each position: {layer, row, col} — col/row in half-tile units
-  const pos = [];
+// 36 types × 2 = 72 tiles
+const MJ_TYPES = [
+  'B1','B2','B3','B4','B5','B6','B7','B8','B9',
+  'C1','C2','C3','C4','C5','C6','C7','C8','C9',
+  'M1','M2','M3','M4','M5','M6','M7','M8','M9',
+  'WE','WS','WW','WN',
+  'DR','DG','DW',
+  'S1','S2','S3',
+];
 
-  // Layer 0 - base rectangle 12×4 = 48 tiles
-  for (let r = 0; r < 4; r++) {
-    for (let c = 0; c < 12; c++) {
-      pos.push({layer:0, row:r, col:c});
-    }
-  }
-  // Layer 1 - 8×2 = 16 tiles centered
-  for (let r = 0; r < 2; r++) {
-    for (let c = 0; c < 8; c++) {
-      pos.push({layer:1, row:r, col:c+2});
-    }
-  }
-  // Layer 2 - 4×1 = 4 tiles
-  for (let c = 0; c < 4; c++) {
-    pos.push({layer:2, row:0, col:c+4});
-  }
-  // Layer 3 - 2 tiles
-  pos.push({layer:3, row:0, col:5});
-  pos.push({layer:3, row:0, col:6});
-  // Layer 4 - 1 tile
-  pos.push({layer:4, row:0, col:5});
-  // Extra tiles along edges (classic turtle wings)
-  pos.push({layer:0, row:1, col:13}); // right wing
-  pos.push({layer:0, row:2, col:13});
-  pos.push({layer:0, row:1, col:-1}); // left wing (col -1)
-  pos.push({layer:0, row:2, col:-1});
-
-  return pos; // 48+16+4+2+1+4 = 75, trim to 72
-}
-
-// Generate 36 pairs ensuring solvability
-function generateMJTiles() {
-  const types = [
-    'B1','B2','B3','B4','B5','B6','B7','B8','B9',
-    'C1','C2','C3','C4','C5','C6','C7','C8','C9',
-    'M1','M2','M3','M4','M5','M6','M7','M8','M9',
-    'WE','WS','WW','WN',
-    'DR','DG','DW',
-    'S1','S2','S3',
-  ];
-  // 36 types × 2 = 72 tiles
-  let deck = [];
-  types.forEach(t => { deck.push(t); deck.push(t); });
-  // Shuffle multiple times for good randomness
-  for (let i = 0; i < 5; i++) deck = shuffle(deck);
-  return deck;
-}
-
-// Build layout ensuring pairs can always be matched
-function buildSolvableLayout() {
-  const layout = buildPyramidLayout().slice(0, 72);
-  const deck = generateMJTiles();
-
-  // Sort positions by layer desc then by accessibility
-  // Place matching pairs in accessible positions
-  const tiles = deck.map((type, i) => ({
-    id: i, type,
-    layer: layout[i].layer,
-    row: layout[i].row,
-    col: layout[i].col,
-    removed: false,
-    selected: false
-  }));
-
-  // Verify at least some moves exist; if not, reshuffle
-  let attempts = 0;
-  let result = tiles;
-  while (!hasMJMove(result) && attempts < 20) {
-    const newDeck = generateMJTiles();
-    result = newDeck.map((type, i) => ({
-      id: i, type,
-      layer: layout[i].layer,
-      row: layout[i].row,
-      col: layout[i].col,
-      removed: false,
-      selected: false
-    }));
-    attempts++;
-  }
-  return result;
+// Classic pyramid layout: layer, row, col (grid units)
+// 72 positions total
+function getMJLayout() {
+  const p = [];
+  // Layer 0 — 12×4 = 48
+  for (let r=0;r<4;r++) for (let c=0;c<12;c++) p.push([0,r,c]);
+  // Layer 1 — 10×2 = 20
+  for (let r=0;r<2;r++) for (let c=1;c<11;c++) p.push([1,r,c]);
+  // Layer 2 — 4×1 = 4 (trimming to fit 72 total)
+  for (let c=4;c<8;c++) p.push([2,1,c]);
+  // Layer 3 — top single row
+  p.push([3,1,5]);
+  p.push([3,1,6]);
+  return p; // 48+20+4+2 = 74 — will take first 72
 }
 
 let mjTiles = [];
@@ -120,72 +56,86 @@ function initMahjong() {
   document.getElementById('mj-time').textContent = '00:00';
   document.getElementById('mj-pairs').textContent = '0';
 
-  mjTiles = buildSolvableLayout();
-  renderMahjong();
-  startTimer('mj','mj-time');
+  // Build deck: 2 of each type
+  let deck = [];
+  MJ_TYPES.forEach(t => { deck.push(t); deck.push(t); });
+  deck = shuffle(deck);
+
+  const layout = getMJLayout().slice(0, 72);
+  mjTiles = deck.map((type, i) => ({
+    id: i, type,
+    layer: layout[i][0],
+    row:   layout[i][1],
+    col:   layout[i][2],
+    removed: false,
+    selected: false
+  }));
+
+  // Retry until there's at least one valid move
+  let tries = 0;
+  while (!mjHasMove() && tries < 30) {
+    deck = shuffle(deck);
+    mjTiles = deck.map((type, i) => ({
+      id: i, type,
+      layer: layout[i][0],
+      row:   layout[i][1],
+      col:   layout[i][2],
+      removed: false,
+      selected: false
+    }));
+    tries++;
+  }
+
+  // Use setTimeout to ensure DOM is ready before measuring
+  setTimeout(() => {
+    renderMahjong();
+    startTimer('mj','mj-time');
+  }, 50);
 }
 
-function isMJFree(tile) {
+function mjIsFree(tile) {
   if (tile.removed) return false;
   // Not covered from above
   const covered = mjTiles.some(t =>
     !t.removed && t.id !== tile.id &&
     t.layer === tile.layer + 1 &&
-    Math.abs(t.row - tile.row) <= 0 &&
+    Math.abs(t.row - tile.row) <= 1 &&
     Math.abs(t.col - tile.col) <= 1
   );
   if (covered) return false;
-  // Free on left or right side
+  // Free on at least one horizontal side
   const blockedL = mjTiles.some(t => !t.removed && t.id !== tile.id && t.layer === tile.layer && t.row === tile.row && t.col === tile.col - 1);
   const blockedR = mjTiles.some(t => !t.removed && t.id !== tile.id && t.layer === tile.layer && t.row === tile.row && t.col === tile.col + 1);
   return !blockedL || !blockedR;
 }
 
-function tilesMatch(a, b) {
+function mjMatch(a, b) {
   if (a.type === b.type) return true;
-  const seasons = ['S1','S2','S3','S4'];
-  if (seasons.includes(a.type) && seasons.includes(b.type)) return true;
-  const flowers = ['F1','F2','F3','F4'];
-  if (flowers.includes(a.type) && flowers.includes(b.type)) return true;
+  if (['S1','S2','S3','S4'].includes(a.type) && ['S1','S2','S3','S4'].includes(b.type)) return true;
+  if (['F1','F2','F3','F4'].includes(a.type) && ['F1','F2','F3','F4'].includes(b.type)) return true;
   return false;
 }
 
-function hasMJMove(tiles) {
-  const free = tiles.filter(t => !t.removed && isMJFreeCheck(t, tiles));
-  for (let i = 0; i < free.length; i++)
-    for (let j = i+1; j < free.length; j++)
-      if (tilesMatch(free[i], free[j])) return true;
+function mjHasMove() {
+  const free = mjTiles.filter(t => !t.removed && mjIsFree(t));
+  for (let i=0;i<free.length;i++)
+    for (let j=i+1;j<free.length;j++)
+      if (mjMatch(free[i], free[j])) return true;
   return false;
-}
-
-function isMJFreeCheck(tile, tiles) {
-  if (tile.removed) return false;
-  const covered = tiles.some(t =>
-    !t.removed && t.id !== tile.id &&
-    t.layer === tile.layer + 1 &&
-    Math.abs(t.row - tile.row) <= 0 &&
-    Math.abs(t.col - tile.col) <= 1
-  );
-  if (covered) return false;
-  const blockedL = tiles.some(t => !t.removed && t.id !== tile.id && t.layer === tile.layer && t.row === tile.row && t.col === tile.col - 1);
-  const blockedR = tiles.some(t => !t.removed && t.id !== tile.id && t.layer === tile.layer && t.row === tile.row && t.col === tile.col + 1);
-  return !blockedL || !blockedR;
 }
 
 function mjClick(id) {
   const tile = mjTiles.find(t => t.id === id);
-  if (!tile || tile.removed || !isMJFree(tile)) return;
+  if (!tile || tile.removed || !mjIsFree(tile)) return;
 
   if (mjSelected === null) {
-    mjSelected = id;
-    tile.selected = true;
+    mjSelected = id; tile.selected = true;
   } else if (mjSelected === id) {
-    tile.selected = false;
-    mjSelected = null;
+    tile.selected = false; mjSelected = null;
   } else {
     const prev = mjTiles.find(t => t.id === mjSelected);
     prev.selected = false;
-    if (tilesMatch(prev, tile)) {
+    if (mjMatch(prev, tile)) {
       mjHistory.push([prev.id, tile.id]);
       prev.removed = true; tile.removed = true;
       mjSelected = null; mjScore += 10; mjMoves++;
@@ -195,12 +145,11 @@ function mjClick(id) {
       document.getElementById('mj-pairs').textContent = (72 - rem) / 2;
       if (rem === 0) {
         stopAllTimers();
-        const t = document.getElementById('mj-time').textContent;
-        showMsg('🎉','Parabéns!',`Tabuleiro limpo em ${t}!`,initMahjong);
+        showMsg('🎉','Parabéns!',`Tabuleiro limpo em ${document.getElementById('mj-time').textContent}!`, initMahjong);
         return;
       }
-      if (!hasMJMove(mjTiles)) {
-        setTimeout(()=>showMsg('😔','Sem movimentos!','Não há mais pares disponíveis. Tente desfazer ou novo jogo.',initMahjong),300);
+      if (!mjHasMove()) {
+        setTimeout(() => showMsg('😔','Sem movimentos!','Não há mais pares disponíveis. Desfaça ou inicie novo jogo.', initMahjong), 300);
       }
     } else {
       mjSelected = id; tile.selected = true;
@@ -210,84 +159,85 @@ function mjClick(id) {
 }
 
 function mjHint() {
-  const free = mjTiles.filter(t => !t.removed && isMJFree(t));
-  for (let i = 0; i < free.length; i++) {
-    for (let j = i+1; j < free.length; j++) {
-      if (tilesMatch(free[i], free[j])) {
+  const free = mjTiles.filter(t => !t.removed && mjIsFree(t));
+  for (let i=0;i<free.length;i++) {
+    for (let j=i+1;j<free.length;j++) {
+      if (mjMatch(free[i], free[j])) {
         [free[i].id, free[j].id].forEach(id => {
           const el = document.querySelector(`.mj-tile[data-id="${id}"]`);
-          if (el) { el.classList.add('hint'); setTimeout(()=>el.classList.remove('hint'),1500); }
+          if (el) { el.classList.add('hint'); setTimeout(() => el.classList.remove('hint'), 1500); }
         });
         return;
       }
     }
   }
-  showMsg('💭','Sem dicas','Não há mais pares disponíveis!',null);
+  showMsg('💭','Sem dicas','Não há mais pares livres!', null);
 }
 
 function mjUndo() {
   if (!mjHistory.length) return;
-  const [id1,id2] = mjHistory.pop();
+  const [id1, id2] = mjHistory.pop();
   mjTiles.find(t=>t.id===id1).removed = false;
   mjTiles.find(t=>t.id===id2).removed = false;
   mjSelected = null;
-  mjTiles.forEach(t=>t.selected=false);
-  mjScore = Math.max(0, mjScore-10);
+  mjTiles.forEach(t => t.selected = false);
+  mjScore = Math.max(0, mjScore - 10);
   document.getElementById('mj-score').textContent = mjScore;
-  const rem = mjTiles.filter(t=>!t.removed).length;
-  document.getElementById('mj-pairs').textContent = (72-rem)/2;
+  const rem = mjTiles.filter(t => !t.removed).length;
+  document.getElementById('mj-pairs').textContent = (72 - rem) / 2;
   renderMahjong();
 }
 
 function renderMahjong() {
   const board = document.getElementById('mj-board');
+  const wrap  = document.getElementById('mj-board-wrap');
   board.innerHTML = '';
 
-  // Fit all tiles in the available width
-  const wrap = document.getElementById('mj-board-wrap');
-  const availW = wrap.clientWidth - 16;
-  const availH = Math.min(availW * 0.65, 300); // keep aspect ratio
+  // Fixed tile size based on screen width — no clientWidth dependency
+  const screenW = window.innerWidth || 360;
+  const availW  = screenW - 32; // padding
 
-  // Grid: 14 cols (-1 to 13), 4 rows, 5 layers
-  const minCol = Math.min(...mjTiles.map(t=>t.col));
-  const maxCol = Math.max(...mjTiles.map(t=>t.col));
-  const minRow = Math.min(...mjTiles.map(t=>t.row));
-  const maxRow = Math.max(...mjTiles.map(t=>t.row));
-  const maxLayer = Math.max(...mjTiles.map(t=>t.layer));
+  // Grid spans: cols 0-11 = 12 units, rows 0-3 = 4 units
+  // Layer offset: 3px per layer
+  const LAYERS = 4, COLS = 12, ROWS = 4;
+  const LAYER_OFFSET = 3;
 
-  const cols = maxCol - minCol + 2;
-  const rows = maxRow - minRow + 2;
-  const OFFSET = 2; // layer offset px
+  const TW = Math.floor((availW - LAYERS * LAYER_OFFSET) / COLS);
+  const TH = Math.floor(TW * 1.35);
 
-  const TW = Math.floor((availW - maxLayer*OFFSET) / (cols + 0.5));
-  const TH = Math.floor(TW * 1.3);
-  const boardW = cols * TW + maxLayer * OFFSET + 4;
-  const boardH = rows * TH + maxLayer * OFFSET + 4;
+  const boardW = COLS * TW + LAYERS * LAYER_OFFSET;
+  const boardH = ROWS * TH + LAYERS * LAYER_OFFSET + 10;
 
-  board.style.width = boardW + 'px';
+  board.style.width  = boardW + 'px';
   board.style.height = boardH + 'px';
   board.style.position = 'relative';
+  wrap.style.height = (boardH + 16) + 'px';
 
-  // Sort by layer so higher layers render on top
-  [...mjTiles].sort((a,b) => a.layer - b.layer).forEach(tile => {
-    if (tile.removed) return;
-    const free = isMJFree(tile);
-    const suit = tile.type.replace(/[0-9]/g,'').substring(0,1);
-    const el = document.createElement('div');
-    el.className = 'mj-tile' +
-      (tile.selected ? ' mj-selected' : '') +
-      (free ? ' mj-free' : ' mj-blocked');
-    el.dataset.id = tile.id;
+  // Sort by layer so higher tiles appear on top
+  [...mjTiles]
+    .filter(t => !t.removed)
+    .sort((a, b) => a.layer - b.layer)
+    .forEach(tile => {
+      const free = mjIsFree(tile);
+      const suit = tile.type[0];
+      const el = document.createElement('div');
+      el.className = 'mj-tile' +
+        (tile.selected ? ' mj-selected' : '') +
+        (free ? ' mj-free' : ' mj-blocked');
+      el.dataset.id = tile.id;
 
-    const x = (tile.col - minCol) * TW + tile.layer * OFFSET;
-    const y = (tile.row - minRow) * TH + tile.layer * OFFSET;
+      const x = tile.col * TW + tile.layer * LAYER_OFFSET;
+      const y = tile.row * TH + tile.layer * LAYER_OFFSET;
 
-    el.style.cssText = `left:${x}px;top:${y}px;width:${TW}px;height:${TH}px;` +
-      `z-index:${tile.layer*100+tile.row*10};` +
-      `font-size:${Math.max(8, TW-10)}px;` +
-      `--suit-color:${MJ_COLORS[suit]||'#333'};`;
-    el.innerHTML = `<span class="mj-label" style="font-size:${Math.max(7,TW-14)}px">${MJ_LABELS[tile.type]||tile.type}</span>`;
-    if (free) el.addEventListener('click', () => mjClick(tile.id));
-    board.appendChild(el);
-  });
+      el.style.cssText =
+        `left:${x}px;top:${y}px;` +
+        `width:${TW}px;height:${TH}px;` +
+        `z-index:${tile.layer * 100 + tile.row};` +
+        `--suit-color:${MJ_COLORS[suit] || '#333'};`;
+
+      const fontSize = Math.max(7, TW - 16);
+      el.innerHTML = `<span class="mj-label" style="font-size:${fontSize}px">${MJ_LABELS[tile.type] || tile.type}</span>`;
+      if (free) el.addEventListener('click', () => mjClick(tile.id));
+      board.appendChild(el);
+    });
 }
